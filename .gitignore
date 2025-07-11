@@ -130,3 +130,6 @@ dmypy.json
 .pyre/
 
 *.lmdb
+
+celebahq_16_128/
+ffhq_16_128/
