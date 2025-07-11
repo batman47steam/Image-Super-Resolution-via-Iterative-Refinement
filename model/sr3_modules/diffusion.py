@@ -15,7 +15,7 @@ def _warmup_beta(linear_start, linear_end, n_timestep, warmup_frac):
         linear_start, linear_end, warmup_time, dtype=np.float64)
     return betas
 
-
+# 如果是linear，这些beta就是非常简单的排布
 def make_beta_schedule(schedule, n_timestep, linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
     if schedule == 'quad':
         betas = np.linspace(linear_start ** 0.5, linear_end ** 0.5,
@@ -60,7 +60,7 @@ def default(val, d):
         return val
     return d() if isfunction(d) else d
 
-
+# 本质上来说，正向和反向，都是围绕最主要的那两个公式
 class GaussianDiffusion(nn.Module):
     def __init__(
         self,
@@ -100,8 +100,8 @@ class GaussianDiffusion(nn.Module):
         betas = betas.detach().cpu().numpy() if isinstance(
             betas, torch.Tensor) else betas
         alphas = 1. - betas
-        alphas_cumprod = np.cumprod(alphas, axis=0)
-        alphas_cumprod_prev = np.append(1., alphas_cumprod[:-1])
+        alphas_cumprod = np.cumprod(alphas, axis=0) # 当前时间步的连乘
+        alphas_cumprod_prev = np.append(1., alphas_cumprod[:-1]) # t-1时间步的连乘
         self.sqrt_alphas_cumprod_prev = np.sqrt(
             np.append(1., alphas_cumprod))
 
@@ -113,6 +113,7 @@ class GaussianDiffusion(nn.Module):
                              to_torch(alphas_cumprod_prev))
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
+        # 由t-1推t需要用到的变量
         self.register_buffer('sqrt_alphas_cumprod',
                              to_torch(np.sqrt(alphas_cumprod)))
         self.register_buffer('sqrt_one_minus_alphas_cumprod',
@@ -125,6 +126,7 @@ class GaussianDiffusion(nn.Module):
                              to_torch(np.sqrt(1. / alphas_cumprod - 1)))
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
+        # 这一项就是公式4里面所对应的方差betas就是1-alpha_t
         posterior_variance = betas * \
             (1. - alphas_cumprod_prev) / (1. - alphas_cumprod)
         # above: equal to 1. / (1. / (1. - alpha_cumprod_tm1) + alpha_t / beta_t)
@@ -138,6 +140,8 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer('posterior_mean_coef2', to_torch(
             (1. - alphas_cumprod_prev) * np.sqrt(alphas) / (1. - alphas_cumprod)))
 
+    # 从xt推x0
+    # 就是公式5倒着推一下
     def predict_start_from_noise(self, x_t, t, noise):
         return self.sqrt_recip_alphas_cumprod[t] * x_t - \
             self.sqrt_recipm1_alphas_cumprod[t] * noise
@@ -152,22 +156,28 @@ class GaussianDiffusion(nn.Module):
         batch_size = x.shape[0]
         noise_level = torch.FloatTensor(
             [self.sqrt_alphas_cumprod_prev[t+1]]).repeat(batch_size, 1).to(x.device)
+        # 都是要先推一个x0，然后再带入，求得t-1的均值和方差
+        # 不是说直接就在x的基础上减去noise，而是带入到原本的公式里面，去推出x0
         if condition_x is not None:
             x_recon = self.predict_start_from_noise(
                 x, t=t, noise=self.denoise_fn(torch.cat([condition_x, x], dim=1), noise_level))
         else:
+            # 反正是先由当前的xt推出一个x0
             x_recon = self.predict_start_from_noise(
                 x, t=t, noise=self.denoise_fn(x, noise_level))
 
         if clip_denoised:
             x_recon.clamp_(-1., 1.)
 
+        # 推出的x0和当前的xt，一起推出xt-1的均值和方差
         model_mean, posterior_log_variance = self.q_posterior(
             x_start=x_recon, x_t=x, t=t)
         return model_mean, posterior_log_variance
 
+    # no_grad的应该都是对应的推理时候的
     @torch.no_grad()
     def p_sample(self, x, t, clip_denoised=True, condition_x=None):
+        # 先求出后验的均值，然后再加上随机噪声，增加多样性
         model_mean, model_log_variance = self.p_mean_variance(
             x=x, t=t, clip_denoised=clip_denoised, condition_x=condition_x)
         noise = torch.randn_like(x) if t > 0 else torch.zeros_like(x)
@@ -190,6 +200,7 @@ class GaussianDiffusion(nn.Module):
             shape = x.shape
             img = torch.randn(shape, device=device)
             ret_img = x
+            # x是输入的低分辨率的图片，img是完全随机采样的噪声
             for i in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
                 img = self.p_sample(img, i, condition_x=x)
                 if i % sample_inter == 0:
@@ -209,6 +220,7 @@ class GaussianDiffusion(nn.Module):
     def super_resolution(self, x_in, continous=False):
         return self.p_sample_loop(x_in, continous)
 
+    # q_sample对应的是由原始图像一步加噪声得到任意的Xt
     def q_sample(self, x_start, continuous_sqrt_alpha_cumprod, noise=None):
         noise = default(noise, lambda: torch.randn_like(x_start))
 
@@ -218,6 +230,7 @@ class GaussianDiffusion(nn.Module):
             (1 - continuous_sqrt_alpha_cumprod**2).sqrt() * noise
         )
 
+    # 训练的时候主要是这个p_loss
     def p_losses(self, x_in, noise=None):
         x_start = x_in['HR']
         [b, c, h, w] = x_start.shape
@@ -232,6 +245,7 @@ class GaussianDiffusion(nn.Module):
         continuous_sqrt_alpha_cumprod = continuous_sqrt_alpha_cumprod.view(
             b, -1)
 
+        # 对应一步加噪声的正向过程，随机采样的噪声
         noise = default(noise, lambda: torch.randn_like(x_start))
         x_noisy = self.q_sample(
             x_start=x_start, continuous_sqrt_alpha_cumprod=continuous_sqrt_alpha_cumprod.view(-1, 1, 1, 1), noise=noise)
@@ -239,6 +253,7 @@ class GaussianDiffusion(nn.Module):
         if not self.conditional:
             x_recon = self.denoise_fn(x_noisy, continuous_sqrt_alpha_cumprod)
         else:
+            # 如果有condition就把低分的图像和采样的噪声一起输入给网络
             x_recon = self.denoise_fn(
                 torch.cat([x_in['SR'], x_noisy], dim=1), continuous_sqrt_alpha_cumprod)
 

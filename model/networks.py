@@ -88,6 +88,7 @@ def define_G(opt):
         from .sr3_modules import diffusion, unet
     if ('norm_groups' not in model_opt['unet']) or model_opt['unet']['norm_groups'] is None:
         model_opt['unet']['norm_groups']=32
+    # model对应的UNet
     model = unet.UNet(
         in_channel=model_opt['unet']['in_channel'],
         out_channel=model_opt['unet']['out_channel'],
@@ -99,6 +100,7 @@ def define_G(opt):
         dropout=model_opt['unet']['dropout'],
         image_size=model_opt['diffusion']['image_size']
     )
+    # netG对应的扩散模型
     netG = diffusion.GaussianDiffusion(
         model,
         image_size=model_opt['diffusion']['image_size'],
