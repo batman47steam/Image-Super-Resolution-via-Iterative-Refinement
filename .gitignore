@@ -133,3 +133,5 @@ dmypy.json
 
 celebahq_16_128/
 ffhq_16_128/
+
+*.png
