@@ -76,7 +76,8 @@ class Downsample(nn.Module):
 
 # building block modules
 
-
+# group norm + swish + dropout + conv
+# block看起来还是相当简单的
 class Block(nn.Module):
     def __init__(self, dim, dim_out, groups=32, dropout=0):
         super().__init__()
@@ -107,7 +108,7 @@ class ResnetBlock(nn.Module):
         h = self.block1(x)
         h = self.noise_func(h, time_emb)
         h = self.block2(h)
-        return h + self.res_conv(x)
+        return h + self.res_conv(x) # 不是直接加，而是通过一个1x1的卷积
 
 
 class SelfAttention(nn.Module):
@@ -141,12 +142,12 @@ class SelfAttention(nn.Module):
 
         return out + input
 
-
+# 看着也非常简单，而且也就是字面的意思
 class ResnetBlocWithAttn(nn.Module):
     def __init__(self, dim, dim_out, *, noise_level_emb_dim=None, norm_groups=32, dropout=0, with_attn=False):
         super().__init__()
         self.with_attn = with_attn
-        self.res_block = ResnetBlock(
+        self.res_block = ResnetBlock( # 只有resnet这里有和noise的交互
             dim, dim_out, noise_level_emb_dim, norm_groups=norm_groups, dropout=dropout)
         if with_attn:
             self.attn = SelfAttention(dim_out, norm_groups=norm_groups)

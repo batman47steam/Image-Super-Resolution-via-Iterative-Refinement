@@ -17,7 +17,7 @@ class DDPM(BaseModel):
         self.schedule_phase = None
 
         # set loss and load resume state
-        self.set_loss()
+        self.set_loss() # 好像就是选L1还是L2
         self.set_new_noise_schedule(
             opt['model']['beta_schedule']['train'], schedule_phase='train')
         if self.opt['phase'] == 'train':
@@ -101,7 +101,7 @@ class DDPM(BaseModel):
             out_dict['SAM'] = self.SR.detach().float().cpu()
         else:
             out_dict['SR'] = self.SR.detach().float().cpu()
-            out_dict['INF'] = self.data['SR'].detach().float().cpu()
+            out_dict['INF'] = self.data['SR'].detach().float().cpu() # 输入的待超分的图像，感觉是插值到一样的分辨率以后的
             out_dict['HR'] = self.data['HR'].detach().float().cpu()
             if need_LR and 'LR' in self.data:
                 out_dict['LR'] = self.data['LR'].detach().float().cpu()

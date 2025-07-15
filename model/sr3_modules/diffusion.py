@@ -92,11 +92,11 @@ class GaussianDiffusion(nn.Module):
     def set_new_noise_schedule(self, schedule_opt, device):
         to_torch = partial(torch.tensor, dtype=torch.float32, device=device)
 
-        betas = make_beta_schedule(
-            schedule=schedule_opt['schedule'],
-            n_timestep=schedule_opt['n_timestep'],
-            linear_start=schedule_opt['linear_start'],
-            linear_end=schedule_opt['linear_end'])
+        betas = make_beta_schedule( # betas很简单，就是通过linear依次进行采样
+            schedule=schedule_opt['schedule'], # linear
+            n_timestep=schedule_opt['n_timestep'], # 2000
+            linear_start=schedule_opt['linear_start'], # 1e-6
+            linear_end=schedule_opt['linear_end']) # 0.01
         betas = betas.detach().cpu().numpy() if isinstance(
             betas, torch.Tensor) else betas
         alphas = 1. - betas
@@ -234,9 +234,9 @@ class GaussianDiffusion(nn.Module):
     def p_losses(self, x_in, noise=None):
         x_start = x_in['HR']
         [b, c, h, w] = x_start.shape
-        t = np.random.randint(1, self.num_timesteps + 1)
+        t = np.random.randint(1, self.num_timesteps + 1) # t是在给定的时间步里面进行采样的
         continuous_sqrt_alpha_cumprod = torch.FloatTensor(
-            np.random.uniform(
+            np.random.uniform( # 这个就对应他说的，在两个时间步之间利用均匀分布进行采样
                 self.sqrt_alphas_cumprod_prev[t-1],
                 self.sqrt_alphas_cumprod_prev[t],
                 size=b
@@ -253,10 +253,10 @@ class GaussianDiffusion(nn.Module):
         if not self.conditional:
             x_recon = self.denoise_fn(x_noisy, continuous_sqrt_alpha_cumprod)
         else:
-            # 如果有condition就把低分的图像和采样的噪声一起输入给网络
+            # 如果有condition就把低分的图像和采样的噪声一起输入给网络，传入的也是continuous，均匀分布的连乘
             x_recon = self.denoise_fn(
                 torch.cat([x_in['SR'], x_noisy], dim=1), continuous_sqrt_alpha_cumprod)
-
+        # 从这个监督来看，网络直接优化的就是noise
         loss = self.loss_func(noise, x_recon)
         return loss
 

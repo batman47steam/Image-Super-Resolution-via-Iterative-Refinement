@@ -26,7 +26,10 @@ def image_convert_bytes(img):
     img.save(buffer, format='png')
     return buffer.getvalue()
 
-
+# 主要就是这个resize_multiple
+# size[0]产生待重建的低分辨率图像
+# size[1]是相当于gt
+# sr_img就是把得到的lr_img再上采样到一样的尺寸，应该是对应INF
 def resize_multiple(img, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False):
     lr_img = resize_and_convert(img, sizes[0], resample)
     hr_img = resize_and_convert(img, sizes[1], resample)
@@ -45,6 +48,7 @@ def resize_worker(img_file, sizes, resample, lmdb_save=False):
     out = resize_multiple(
         img, sizes=sizes, resample=resample, lmdb_save=lmdb_save)
 
+    # 返回的是文件名和resize的结果
     return img_file.name.split('.')[0], out
 
 class WorkingContext():
@@ -98,6 +102,7 @@ def all_threads_inactive(worker_threads):
     return True
 
 def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBIC, lmdb_save=False):
+    # 部分绑定，现在resize_fn只需要img_file这一个参数
     resize_fn = partial(resize_worker, sizes=sizes,
                         resample=resample, lmdb_save=lmdb_save)
     files = [p for p in Path(
@@ -136,11 +141,11 @@ def prepare(img_path, out_path, n_worker, sizes=(16, 128), resample=Image.BICUBI
     else:
         total = 0
         for file in tqdm(files):
-            i, imgs = resize_fn(file)
-            lr_img, hr_img, sr_img = imgs
+            i, imgs = resize_fn(file) # i对应文件名，图片原本的名称也就是五位数字，同时有0占位
+            lr_img, hr_img, sr_img = imgs # imgs包含了同一个图片在不同分辨率下的结果
             if not lmdb_save:
                 lr_img.save(
-                    '{}/lr_{}/{}.png'.format(out_path, sizes[0], i.zfill(5)))
+                    '{}/lr_{}/{}.png'.format(out_path, sizes[0], i.zfill(5))) # 生成图片的序号
                 hr_img.save(
                     '{}/hr_{}/{}.png'.format(out_path, sizes[1], i.zfill(5)))
                 sr_img.save(
@@ -180,3 +185,13 @@ if __name__ == '__main__':
     args.out = '{}_{}_{}'.format(args.out, sizes[0], sizes[1])
     prepare(args.path, args.out, args.n_worker,
             sizes=sizes, resample=resample, lmdb_save=args.lmdb)
+
+# 如果用自己的数据
+# 相当于直接就有inf了，因为我本身输出的就是256的
+# 需要和他的这个形式对应，以及说图片应该是什么名称的，应该是设置为000xx.png，五位的这种形式
+
+# 我的gt和lr分别是从两个不同的地方读取过来的
+# 1. 以文件夹下的路径名为准，读取分别读取图片，gt的放到hr，然后lr的放到lr和sr文件夹下
+# 2. 存放图片的同时对名称进行修改，改为0000xx.png的格式
+# 3. 最好的肯定是希望能够直接复用data部分，不用改变太多
+# 4. 不需要resize，直接读取以后存放就行了

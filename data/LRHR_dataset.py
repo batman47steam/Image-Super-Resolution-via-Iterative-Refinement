@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 import random
 import data.util as Util
 
-
+# 传入的分辨率要注意，因为会根据这个去读取文件路径
 class LRHRDataset(Dataset):
     def __init__(self, dataroot, datatype, l_resolution=16, r_resolution=128, split='train', data_len=-1, need_LR=False):
         self.datatype = datatype
@@ -80,6 +80,7 @@ class LRHRDataset(Dataset):
                             'lr_{}_{}'.format(
                                 self.l_res, str(new_index).zfill(5)).encode('utf-8')
                         )
+                # 好像就是分别取出来，然后转换为RGB，因为img_SR以及是LR上采样的，所以不一定还需要LR
                 img_HR = Image.open(BytesIO(hr_img_bytes)).convert("RGB")
                 img_SR = Image.open(BytesIO(sr_img_bytes)).convert("RGB")
                 if self.need_LR:
